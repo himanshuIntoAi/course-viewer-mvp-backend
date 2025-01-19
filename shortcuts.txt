@@ -1,0 +1,10 @@
+/*
+F5 - Run
+Ctrl+F5 - Run without debugging
+
+F10, F11 - Debugger ShortCuts
+
+F12 - Code Thru
+*/
+
+

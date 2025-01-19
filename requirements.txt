@@ -1,0 +1,11 @@
+fastapi[standard]
+uvicorn
+sqlmodel
+psycopg2-binary  # For PostgreSQL connection (required for Supabase)
+python-dotenv
+pytest
+pydantic
+pydantic-settings
+pytest-html
+pytest-asyncio
+pytest-cov

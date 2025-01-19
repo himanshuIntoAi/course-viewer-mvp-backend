@@ -1,0 +1,29 @@
+# Python cache files
+*.pyc
+*.pyo
+__pycache__/
+_pycache_cache/
+
+# Virtual environment
+venv/
+.env/
+
+# Coverage reports
+.coverage
+htmlcov/
+
+# IDE settings
+.vscode/
+.idea/
+
+# Egg info
+*.egg-info/
+dist/
+build/
+
+# Logs
+*.log
+
+# Miscellaneous
+.DS_Store
+*.swp

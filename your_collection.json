@@ -1,0 +1,139 @@
+{
+    "info": {
+        "name": "Country API",
+        "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
+    },
+    "item": [
+        {
+            "name": "Create Country",
+            "request": {
+                "method": "POST",
+                "header": [
+                    {
+                        "key": "Content-Type",
+                        "value": "application/json"
+                    }
+                ],
+                "body": {
+                    "mode": "raw",
+                    "raw": "{\n    \"name\": \"Country Name\",\n    \"created_by\": 1,\n    \"active\": true\n}"
+                },
+                "url": {
+                    "raw": "http://127.0.0.1:8000/api/v1/",
+                    "protocol": "http",
+                    "host": [
+                        "127.0.0.1"
+                    ],
+                    "port": "8000",
+                    "path": [
+                        "api",
+                        "v1"
+                    ]
+                }
+            }
+        },
+        {
+            "name": "Read Country",
+            "request": {
+                "method": "GET",
+                "url": {
+                    "raw": "http://127.0.0.1:8000/api/v1/{{country_id}}",
+                    "protocol": "http",
+                    "host": [
+                        "127.0.0.1"
+                    ],
+                    "port": "8000",
+                    "path": [
+                        "api",
+                        "v1",
+                        "{{country_id}}"
+                    ],
+                    "variable": [
+                        {
+                            "key": "country_id",
+                            "value": "1"
+                        }
+                    ]
+                }
+            }
+        },
+        {
+            "name": "Read All Countries",
+            "request": {
+                "method": "GET",
+                "url": {
+                    "raw": "http://127.0.0.1:8000/api/v1/",
+                    "protocol": "http",
+                    "host": [
+                        "127.0.0.1"
+                    ],
+                    "port": "8000",
+                    "path": [
+                        "api",
+                        "v1"
+                    ]
+                }
+            }
+        },
+        {
+            "name": "Update Country",
+            "request": {
+                "method": "PUT",
+                "header": [
+                    {
+                        "key": "Content-Type",
+                        "value": "application/json"
+                    }
+                ],
+                "body": {
+                    "mode": "raw",
+                    "raw": "{\n    \"name\": \"Updated Country Name\",\n    \"updated_by\": 2,\n    \"active\": true\n}"
+                },
+                "url": {
+                    "raw": "http://127.0.0.1:8000/api/v1/{{country_id}}",
+                    "protocol": "http",
+                    "host": [
+                        "127.0.0.1"
+                    ],
+                    "port": "8000",
+                    "path": [
+                        "api",
+                        "v1",
+                        "{{country_id}}"
+                    ],
+                    "variable": [
+                        {
+                            "key": "country_id",
+                            "value": "1"
+                        }
+                    ]
+                }
+            }
+        },
+        {
+            "name": "Delete Country",
+            "request": {
+                "method": "DELETE",
+                "url": {
+                    "raw": "http://127.0.0.1:8000/api/v1/{{country_id}}",
+                    "protocol": "http",
+                    "host": [
+                        "127.0.0.1"
+                    ],
+                    "port": "8000",
+                    "path": [
+                        "api",
+                        "v1",
+                        "{{country_id}}"
+                    ],
+                    "variable": [
+                        {
+                            "key": "country_id",
+                            "value": "1"
+                        }
+                    ]
+                }
+            }
+        }
+    ]
+}

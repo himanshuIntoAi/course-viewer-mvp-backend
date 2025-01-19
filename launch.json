@@ -1,0 +1,19 @@
+{
+    "version": "0.2.0",
+    "configurations": [
+        {
+            "name": "FastAPI Debug",
+            "type": "python",
+            "request": "launch",
+            "module": "uvicorn",
+            "args": [
+                "main:app",          // Update to match your app’s entry point
+                "--host", "127.0.0.1",
+                "--port", "8000",
+                "--reload"
+            ],
+            "jinja": true,
+            "justMyCode": true
+        }
+    ]
+}
