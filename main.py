@@ -6,6 +6,7 @@ from common.database import engine
 from cou_admin.api.country_routes import router as country_router
 from cou_user.api.user_routes import router as user_router
 from cou_course.api.course_routes import router as course_router
+from cou_course.api.coursecategory_routes import router as coursecategory_router
 from fastapi import FastAPI
 #from cou_admin.api.state_routes import router as state_router
 
@@ -25,6 +26,8 @@ app = FastAPI(lifespan=lifespan, debug=True)
 app.include_router(country_router, prefix="/api/v1")
 app.include_router(user_router, prefix="/api/v1")
 app.include_router(course_router, prefix="/api/v1")
+app.include_router(coursecategory_router, prefix="/api/v1")
+
 #app.include_router(state_router, prefix="/api/v1")
 
 # Debug: Print all routes

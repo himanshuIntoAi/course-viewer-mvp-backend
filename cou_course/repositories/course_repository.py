@@ -14,6 +14,7 @@ class CourseRepository:
     def get_course_by_id(session: Session, course_id: int) -> Optional[Course]:
         return session.get(Course, course_id)
 
+     
     @staticmethod
     def get_all_courses(session: Session) -> List[Course]:
         statement = select(Course)
