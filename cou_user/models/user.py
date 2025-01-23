@@ -31,6 +31,8 @@ class User(SQLModel, table=True):
     youtube: Optional[str] = Field(default=None, max_length=500)
     monitor: Optional[bool] = Field(default=False)
     remarks: Optional[str] = None
+    # currency_id: Optional[int] = Field(default=None, foreign_key="cou_admin.currency.id")
+    # country_id: Optional[int] = Field(default=None, foreign_key="cou_admin.country.id")
     currency_id: Optional[int] = Field(default=None, foreign_key="cou_admin.currency.id")
     country_id: Optional[int] = Field(default=None, foreign_key="cou_admin.country.id")
     is_student: Optional[bool] = None
