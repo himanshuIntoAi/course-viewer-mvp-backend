@@ -1,8 +1,13 @@
-/*Run the FastAPI app / Run locally
+/*
+Day to day Commands:
 --------------------------------------------------------------------------------------------------------------
+python -m venv .venv
 uvicorn main:app --reload
-uvicorn main:app --reload --log-level debug
 
+
+Run the FastAPI app / Run locally
+--------------------------------------------------------------------------------------------------------------
+uvicorn main:app --reload --log-level debug
 vercel (vercel deploy the code into the vercel server):
 --------------------------------------------------------------------------------------------------------------
 Install Vercel CLI
