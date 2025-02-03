@@ -24,6 +24,7 @@ class CourseRead(CourseBase):
     id: int
     created_at: datetime
     updated_at: datetime
+    mentor: Optional[int]
 
     class Config:
         orm_mode = True

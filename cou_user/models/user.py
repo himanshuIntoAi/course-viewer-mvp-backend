@@ -1,7 +1,9 @@
 from sqlmodel import SQLModel, Field, Relationship
-from typing import Optional
+from typing import Optional, List, TYPE_CHECKING
 from datetime import datetime, timezone
 
+if TYPE_CHECKING:
+    from .loginhistory import LoginHistory
 
 class User(SQLModel, table=True):
     __tablename__ = "user"
@@ -16,13 +18,13 @@ class User(SQLModel, table=True):
     work_email: Optional[str] = Field(default=None, max_length=500)
     personal_email: Optional[str] = Field(default=None, max_length=500)
     login_type_id: Optional[int] = Field(default=None, foreign_key="cou_user.login_type.id")
-    mobile: Optional[int] = None
-    affiliate_id: Optional[int] = None
+    mobile: Optional[str] = Field(default=None)
+    affiliate_id: Optional[int] = Field(default=None)
     created_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
     created_by: int
     updated_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
     updated_by: int
-    active: Optional[bool] = Field(default=True)
+    active: bool = Field(default=True)
     premium: Optional[bool] = Field(default=False)
     facebook: Optional[str] = Field(default=None, max_length=500)
     instagram: Optional[str] = Field(default=None, max_length=500)
@@ -31,13 +33,15 @@ class User(SQLModel, table=True):
     youtube: Optional[str] = Field(default=None, max_length=500)
     monitor: Optional[bool] = Field(default=False)
     remarks: Optional[str] = None
-    # currency_id: Optional[int] = Field(default=None, foreign_key="cou_admin.currency.id")
-    # country_id: Optional[int] = Field(default=None, foreign_key="cou_admin.country.id")
     currency_id: Optional[int] = Field(default=None, foreign_key="cou_admin.currency.id")
     country_id: Optional[int] = Field(default=None, foreign_key="cou_admin.country.id")
-    is_student: Optional[bool] = None
-    is_instructor: Optional[bool] = None
-    key: Optional[str] = None
+
+    is_student: Optional[bool] = Field(default=False)
+    is_instructor: Optional[bool] = Field(default=False)
+    key: Optional[str] = Field(default=None)  # For storing password hash
+
+    # Add relationships
+    login_history: List["LoginHistory"] = Relationship(back_populates="user", sa_relationship_kwargs={"lazy": "selectin"})
 
 
 

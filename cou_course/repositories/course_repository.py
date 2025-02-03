@@ -38,3 +38,7 @@ class CourseRepository:
             session.commit()
             return True
         return False
+    
+    @staticmethod
+    def get_courses_by_mentor(session: Session, mentor_id: int):
+        return session.exec(select(Course).where(Course.mentor_id == mentor_id)).all()

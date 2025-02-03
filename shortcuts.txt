@@ -1,21 +1,12 @@
-/*
-Day to day Commands:
+/*Run the FastAPI app / Run locally
 --------------------------------------------------------------------------------------------------------------
-.venv\Scripts\Activate.ps1 (To activate Python Environment)
-uvicorn main:app --reload (To run Fast API at locally)
+.venv\Scripts\Activate.ps1
 
-Day to day Commands:
---------------------------------------------------------------------------------------------------------------
-python -m venv .venv  (FIRST TIME ONLY)
-.venv\Scripts\Activate.ps1 (To activate Python Environment)
-python -m pip install --upgrade pip  (FIRST TIME ONLY)
-pip install -r requirements.txt (FIRST TIME ONLY)
-
-
-
-Run the FastAPI app / Run locally
---------------------------------------------------------------------------------------------------------------
+uvicorn main:app --reload
 uvicorn main:app --reload --log-level debug
+
+python -m uvicorn main:app --reload
+
 vercel (vercel deploy the code into the vercel server):
 --------------------------------------------------------------------------------------------------------------
 Install Vercel CLI

@@ -1,30 +1,84 @@
 # Python cache files
-*.pyc
-*.pyo
 __pycache__/
-_pycache_cache/
+*.py[cod]
+*$py.class
 
 # Virtual environment
 venv/
 .env/
+env/
+ENV/
 .venv/
+pythonenv*/
 
-# Coverage reports
+# Distribution / packaging
+dist/
+build/
+*.egg-info/
+eggs/
+.eggs/
+wheels/
+share/python-wheels/
+*.egg
+
+# Testing and coverage
 .coverage
 htmlcov/
+coverage.xml
+.coverage.*
+.pytest_cache/
+nosetests.xml
+.tox/
+.nox/
 
 # IDE settings
 .vscode/
 .idea/
+*.sublime-project
+*.sublime-workspace
+*.iml
+.project
+.pydevproject
+.settings/
 
-# Egg info
-*.egg-info/
-dist/
-build/
-
-# Logs
+# Logs and databases
 *.log
+logs/
+*.sqlite3
+*.db
+
+# Environment variables
+.env
+.env.*
+.envrc
+
+# Documentation
+docs/_build/
+site/
+
+# Jupyter Notebook
+.ipynb_checkpoints
+*.ipynb
+
+# Node.js
+node_modules/
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+.pnpm-debug.log*
+.npm
+.yarn
+.pnp.*
+.next/
+out/
+build/
+.DS_Store
 
 # Miscellaneous
 .DS_Store
 *.swp
+*.swo
+*~
+.python-version
+local_settings.py
+instance/
