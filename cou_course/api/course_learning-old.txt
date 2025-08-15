@@ -1,0 +1,753 @@
+from fastapi import APIRouter , Depends , HTTPException
+from sqlmodel import Session
+from typing import List
+from cou_course.models.course_learning import VideoListResponse, VideoInfo
+from common.database import get_session
+from azure.storage.blob import BlobServiceClient
+from azure.core.exceptions import ResourceExistsError, ResourceNotFoundError
+import os
+import requests
+from datetime import datetime, timedelta
+from jose import jwt
+import json
+from pydantic import BaseModel
+import tempfile
+import time
+import base64
+import logging
+import subprocess
+import shutil
+import uuid
+from msal import ConfidentialClientApplication
+from faster_whisper import WhisperModel
+import m3u8
+
+# Teams recording response models
+class TeamsRecordingInfo(BaseModel):
+    name: str
+    download_url: str
+    size: int
+    created_date: str
+
+
+class TeamsRecordingResponse(BaseModel):
+    recordings: List[TeamsRecordingInfo]
+    total_count: int
+    message: str
+
+
+# Configure logging
+logging.basicConfig(level=logging.INFO)
+logger = logging.getLogger(__name__)
+
+router = APIRouter(
+    prefix = "/courselearning" , 
+    tags=["courses"]
+)
+
+# Get Azure connection string from environment variable
+AZURE_CONNECTION_STRING = os.getenv("AZURE_STORAGE_CONNECTION_STRING")
+if not AZURE_CONNECTION_STRING:
+    raise ValueError("AZURE_STORAGE_CONNECTION_STRING environment variable is not set")
+
+CONTAINER_NAME = "zoom-recordings"
+
+try:
+    blob_service_client = BlobServiceClient.from_connection_string(AZURE_CONNECTION_STRING)
+    # Get the container client
+    container_client = blob_service_client.get_container_client(CONTAINER_NAME)
+    # Verify container exists
+    if not container_client.exists():
+        raise ValueError(f"Container '{CONTAINER_NAME}' does not exist in Azure Storage")
+except Exception as e:
+    raise ValueError(f"Failed to initialize Azure Blob Service Client: {str(e)}")
+
+@router.get("/" , response_model=VideoListResponse)
+def fetch_videos():
+    try:
+        video_list = []
+        
+        # List all blobs in the container
+        blob_list = container_client.list_blobs()
+        
+        for blob in blob_list:
+            # Generate a URL for each blob
+            sas_url = f"https://{blob_service_client.account_name}.blob.core.windows.net/{CONTAINER_NAME}/{blob.name}"
+            video_info = VideoInfo(
+                name=blob.name,
+                url=sas_url,
+                content_type=blob.content_settings.content_type,
+                size=blob.size
+            )
+            video_list.append(video_info)
+
+        return VideoListResponse(videos=video_list)
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Failed to fetch videos: {str(e)}")
+
+class ZoomRecordingResponse(BaseModel):
+    azure_url: str
+    recording_name: str
+    upload_status: str
+    meeting_topic: str
+    recording_start: str
+
+class HLSZoomRecordingResponse(BaseModel):
+    azure_url: str
+    recording_name: str
+    upload_status: str
+    meeting_topic: str
+    recording_start: str
+    master_playlist_url: str
+    variant_playlist_urls: dict
+    segments: List[str]
+
+class TranscriptionResponse(BaseModel):
+    video_name: str
+    transcript: str
+    status: str
+    segments: List[dict]
+
+def get_zoom_access_token(account_id: str, client_id: str, client_secret: str) -> str:
+    """Get Zoom access token using Server-to-Server OAuth"""
+    logger.info("Starting Zoom OAuth token generation...")
+    url = f"https://zoom.us/oauth/token?grant_type=account_credentials&account_id={account_id}"
+    
+    # Create basic auth header
+    logger.info("Creating authorization header...")
+    credentials = base64.b64encode(f"{client_id}:{client_secret}".encode()).decode()
+    headers = {
+        "Authorization": f"Basic {credentials}",
+        "Content-Type": "application/json"
+    }
+    
+    logger.info(f"Making OAuth request to Zoom API: {url}")
+    response = requests.post(url, headers=headers)
+    
+    if response.status_code != 200:
+        logger.error(f"Zoom OAuth Error - Status: {response.status_code}, Response: {response.text}")
+        raise HTTPException(
+            status_code=response.status_code,
+            detail=f"Failed to get Zoom access token: {response.text}"
+        )
+    
+    logger.info("Successfully obtained Zoom access token")
+    return response.json()["access_token"]
+
+@router.post("/sync-zoom-recordings", response_model=List[ZoomRecordingResponse])
+async def sync_zoom_recordings():
+    try:
+        logger.info("Starting Zoom recordings sync process...")
+        
+        # Get Zoom credentials from environment
+        logger.info("Fetching Zoom credentials from environment...")
+        zoom_account_id = os.getenv("ZOOM_ACCOUNT_ID")
+        zoom_client_id = os.getenv("ZOOM_CLIENT_ID")
+        zoom_client_secret = os.getenv("ZOOM_CLIENT_SECRET")
+        
+        if not all([zoom_account_id, zoom_client_id, zoom_client_secret]):
+            logger.error("Missing required Zoom credentials in environment variables")
+            missing_vars = [
+                var for var, val in {
+                    "ZOOM_ACCOUNT_ID": zoom_account_id,
+                    "ZOOM_CLIENT_ID": zoom_client_id,
+                    "ZOOM_CLIENT_SECRET": zoom_client_secret
+                }.items() if not val
+            ]
+            raise HTTPException(
+                status_code=500,
+                detail=f"Missing Zoom credentials: {', '.join(missing_vars)}"
+            )
+
+        # Get Zoom access token
+        token = get_zoom_access_token(zoom_account_id, zoom_client_id, zoom_client_secret)
+        
+        # Get recordings from last 5 days
+        to_date = datetime.utcnow()
+        from_date = (to_date - timedelta(days=5)).strftime('%Y-%m-%d')
+        to_date = to_date.strftime('%Y-%m-%d')
+        
+        logger.info(f"Fetching recordings from {from_date} to {to_date}")
+        zoom_recordings = get_zoom_recordings(token, from_date, to_date)
+        
+        results = []
+        logger.info(f"Found {len(zoom_recordings)} recordings to process")
+        
+        for idx, recording in enumerate(zoom_recordings, 1):
+            meeting_topic = recording.get('topic', 'Untitled Meeting')
+            logger.info(f"Processing recording {idx}/{len(zoom_recordings)}: {meeting_topic}")
+            
+            for file in recording.get('recording_files', []):
+                if file['file_type'].lower() == 'mp4':
+                    try:
+                        logger.info(f"Processing MP4 file for meeting: {meeting_topic}")
+                        
+                        # Get download URL with access token
+                        logger.info("Getting download URL...")
+                        download_url = get_recording_download_url(token, file['download_url'])
+                        
+                        # Download recording from Zoom
+                        logger.info("Downloading recording from Zoom...")
+                        recording_data = download_zoom_recording(download_url)
+                        logger.info(f"Successfully downloaded recording, size: {len(recording_data)} bytes")
+                        
+                        # Create a meaningful blob name
+                        recording_start = datetime.strptime(file['recording_start'], "%Y-%m-%dT%H:%M:%SZ")
+                        formatted_date = recording_start.strftime("%Y%m%d_%H%M%S")
+                        safe_topic = "".join(c for c in meeting_topic if c.isalnum() or c in (' ', '-', '_')).strip()
+                        blob_name = f"zoom_{safe_topic}_{formatted_date}.mp4"
+                        logger.info(f"Generated blob name: {blob_name}")
+                        
+                        # Upload to Azure
+                        logger.info("Uploading to Azure Blob Storage...")
+                        azure_url = upload_to_azure(recording_data, blob_name)
+                        logger.info(f"Successfully uploaded to Azure: {azure_url}")
+                        
+                        results.append(
+                            ZoomRecordingResponse(
+                                azure_url=azure_url,
+                                recording_name=blob_name,
+                                upload_status="success",
+                                meeting_topic=meeting_topic,
+                                recording_start=file['recording_start']
+                            )
+                        )
+                        logger.info(f"Successfully processed recording: {blob_name}")
+                    except Exception as e:
+                        logger.error(f"Error processing recording {meeting_topic}: {str(e)}", exc_info=True)
+                        results.append(
+                            ZoomRecordingResponse(
+                                azure_url="",
+                                recording_name=f"zoom_{recording['uuid']}.mp4",
+                                upload_status=f"failed: {str(e)}",
+                                meeting_topic=meeting_topic,
+                                recording_start=file['recording_start']
+                            )
+                        )
+        
+        logger.info(f"Completed processing all recordings. Success: {sum(1 for r in results if r.upload_status == 'success')}, Failed: {sum(1 for r in results if r.upload_status.startswith('failed'))}")
+        return results
+                        
+    except Exception as e:
+        logger.error(f"Error in sync_zoom_recordings: {str(e)}", exc_info=True)
+        raise HTTPException(status_code=500, detail=f"Failed to sync recordings: {str(e)}")
+
+def get_zoom_recordings(token: str, from_date: str, to_date: str) -> list:
+    logger.info("Starting to fetch Zoom recordings...")
+    headers = {
+        'Authorization': f'Bearer {token}',
+        'Content-Type': 'application/json'
+    }
+    
+    # Get recordings for date range
+    url = f'https://api.zoom.us/v2/users/me/recordings?from={from_date}&to={to_date}&page_size=300'
+    logger.info(f"Making request to Zoom API: {url}")
+    
+    all_meetings = []
+    page_token = None
+    
+    while True:
+        # Add page token if we have one
+        current_url = f"{url}&next_page_token={page_token}" if page_token else url
+        response = requests.get(current_url, headers=headers)
+        
+        if response.status_code != 200:
+            logger.error(f"Zoom API Error - Status: {response.status_code}, Response: {response.text}")
+            raise HTTPException(
+                status_code=response.status_code,
+                detail=f"Failed to fetch Zoom recordings: {response.text}"
+            )
+        
+        response_data = response.json()
+        meetings = response_data.get('meetings', [])
+        all_meetings.extend(meetings)
+        
+        # Check if there are more pages
+        page_token = response_data.get('next_page_token')
+        if not page_token:
+            break
+        
+        logger.info(f"Fetched page of recordings, got {len(meetings)} recordings, fetching next page...")
+    
+    logger.info(f"Successfully fetched total of {len(all_meetings)} recordings from Zoom")
+    return all_meetings
+
+def get_recording_download_url(token: str, download_url: str) -> str:
+    logger.info(f"Generating download URL for recording: {download_url}")
+    url = f"{download_url}?access_token={token}"
+    logger.info("Successfully generated download URL")
+    return url
+
+def download_zoom_recording(download_url: str) -> bytes:
+    logger.info("Starting to download recording...")
+    response = requests.get(download_url)
+    
+    if response.status_code != 200:
+        logger.error(f"Download Error - Status: {response.status_code}, Response: {response.text}")
+        raise HTTPException(
+            status_code=response.status_code,
+            detail=f"Failed to download recording: {response.text}"
+        )
+    
+    content = response.content
+    logger.info(f"Successfully downloaded recording, size: {len(content)} bytes")
+    return content
+
+def upload_to_azure(file_data: bytes, blob_name: str) -> str:
+    try:
+        logger.info(f"Starting upload to Azure - Blob name: {blob_name}")
+        # Upload to Azure
+        blob_client = container_client.get_blob_client(blob_name)
+        blob_client.upload_blob(file_data, overwrite=True)
+        
+        # Generate URL
+        url = f"https://{blob_service_client.account_name}.blob.core.windows.net/{CONTAINER_NAME}/{blob_name}"
+        logger.info(f"Successfully uploaded to Azure: {url}")
+        return url
+        
+    except Exception as e:
+        logger.error(f"Azure upload error for {blob_name}: {str(e)}", exc_info=True)
+        raise HTTPException(
+            status_code=500,
+            detail=f"Failed to upload to Azure: {str(e)}"
+        )
+
+@router.post("/sync-zoom-recordings-hls", response_model=List[HLSZoomRecordingResponse])
+async def sync_zoom_recordings_hls():
+    try:
+        logger.info("Starting Zoom recordings sync process with HLS conversion...")
+        
+        # Get Zoom credentials from environment
+        logger.info("Fetching Zoom credentials from environment...")
+        zoom_account_id = os.getenv("ZOOM_ACCOUNT_ID")
+        zoom_client_id = os.getenv("ZOOM_CLIENT_ID")
+        zoom_client_secret = os.getenv("ZOOM_CLIENT_SECRET")
+        
+        if not all([zoom_account_id, zoom_client_id, zoom_client_secret]):
+            logger.error("Missing required Zoom credentials in environment variables")
+            missing_vars = [
+                var for var, val in {
+                    "ZOOM_ACCOUNT_ID": zoom_account_id,
+                    "ZOOM_CLIENT_ID": zoom_client_id,
+                    "ZOOM_CLIENT_SECRET": zoom_client_secret
+                }.items() if not val
+            ]
+            raise HTTPException(
+                status_code=500,
+                detail=f"Missing Zoom credentials: {', '.join(missing_vars)}"
+            )
+
+        # Get Zoom access token
+        token = get_zoom_access_token(zoom_account_id, zoom_client_id, zoom_client_secret)
+        
+        # Get recordings from last 5 days
+        to_date = datetime.utcnow()
+        from_date = (to_date - timedelta(days=5)).strftime('%Y-%m-%d')
+        to_date = to_date.strftime('%Y-%m-%d')
+        
+        logger.info(f"Fetching recordings from {from_date} to {to_date}")
+        zoom_recordings = get_zoom_recordings(token, from_date, to_date)
+        
+        results = []
+        logger.info(f"Found {len(zoom_recordings)} recordings to process")
+        
+        for idx, recording in enumerate(zoom_recordings, 1):
+            meeting_topic = recording.get('topic', 'Untitled Meeting')
+            logger.info(f"Processing recording {idx}/{len(zoom_recordings)}: {meeting_topic}")
+            
+            for file in recording.get('recording_files', []):
+                if file['file_type'].lower() == 'mp4':
+                    try:
+                        logger.info(f"Processing MP4 file for meeting: {meeting_topic}")
+                        
+                        # Get download URL with access token
+                        logger.info("Getting download URL...")
+                        download_url = get_recording_download_url(token, file['download_url'])
+                        
+                        # Download recording from Zoom
+                        logger.info("Downloading recording from Zoom...")
+                        recording_data = download_zoom_recording(download_url)
+                        logger.info(f"Successfully downloaded recording, size: {len(recording_data)} bytes")
+                        
+                        # Create a meaningful blob name base
+                        recording_start = datetime.strptime(file['recording_start'], "%Y-%m-%dT%H:%M:%SZ")
+                        formatted_date = recording_start.strftime("%Y%m%d_%H%M%S")
+                        safe_topic = "".join(c for c in meeting_topic if c.isalnum() or c in (' ', '-', '_')).strip()
+                        base_name = f"zoom_{safe_topic}_{formatted_date}"
+                        
+                        # Convert to HLS and upload
+                        logger.info("Converting to HLS format and uploading...")
+                        hls_result = convert_and_upload_hls(recording_data, base_name)
+                        
+                        results.append(
+                            HLSZoomRecordingResponse(
+                                azure_url=hls_result['master_url'],
+                                recording_name=base_name,
+                                upload_status="success",
+                                meeting_topic=meeting_topic,
+                                recording_start=file['recording_start'],
+                                master_playlist_url=hls_result['master_url'],
+                                variant_playlist_urls=hls_result['playlist_urls'],
+                                segments=hls_result['segment_urls']
+                            )
+                        )
+                        logger.info(f"Successfully processed recording: {base_name}")
+                    except Exception as e:
+                        logger.error(f"Error processing recording {meeting_topic}: {str(e)}", exc_info=True)
+                        results.append(
+                            HLSZoomRecordingResponse(
+                                azure_url="",
+                                recording_name=f"zoom_{recording['uuid']}",
+                                upload_status=f"failed: {str(e)}",
+                                meeting_topic=meeting_topic,
+                                recording_start=file['recording_start'],
+                                master_playlist_url="",
+                                variant_playlist_urls={},
+                                segments=[]
+                            )
+                        )
+        
+        logger.info(f"Completed processing all recordings. Success: {sum(1 for r in results if r.upload_status == 'success')}, Failed: {sum(1 for r in results if r.upload_status.startswith('failed'))}")
+        return results
+                        
+    except Exception as e:
+        logger.error(f"Error in sync_zoom_recordings_hls: {str(e)}", exc_info=True)
+        raise HTTPException(status_code=500, detail=f"Failed to sync recordings: {str(e)}")
+
+def convert_and_upload_hls(video_data: bytes, base_name: str) -> dict:
+    """Convert video to HLS format and upload to Azure Storage"""
+    try:
+        # Create temporary directory for processing
+        with tempfile.TemporaryDirectory() as temp_dir:
+            # Save the video data to a temporary file
+            input_path = os.path.join(temp_dir, "input.mp4")
+            with open(input_path, "wb") as f:
+                f.write(video_data)
+            
+            # Create output directory for HLS files
+            output_dir = os.path.join(temp_dir, base_name)
+            os.makedirs(output_dir, exist_ok=True)
+            
+            # Create master playlist content
+            master_playlist_content = """#EXTM3U
+#EXT-X-VERSION:3
+#EXT-X-STREAM-INF:BANDWIDTH=400000,RESOLUTION=426x240
+240p.m3u8
+#EXT-X-STREAM-INF:BANDWIDTH=800000,RESOLUTION=640x360
+360p.m3u8
+#EXT-X-STREAM-INF:BANDWIDTH=1400000,RESOLUTION=1280x720
+720p.m3u8"""
+
+            # Write master playlist
+            master_playlist_path = os.path.join(output_dir, "master.m3u8")
+            with open(master_playlist_path, "w") as f:
+                f.write(master_playlist_content)
+            
+            # Convert to multi-bitrate HLS using ffmpeg
+            cmd = [
+                "ffmpeg", "-i", input_path,
+                "-filter_complex",
+                "[0:v]split=3[v1][v2][v3];" +
+                "[v1]scale=w=426:h=240[v1out];" +
+                "[v2]scale=w=640:h=360[v2out];" +
+                "[v3]scale=w=1280:h=720[v3out]",
+                "-map", "[v1out]", "-c:v:0", "libx264", "-b:v:0", "400k", "-map", "a:0", "-c:a:0", "aac",
+                "-f", "hls", "-hls_time", "10", "-hls_playlist_type", "vod",
+                "-hls_segment_filename", f"{output_dir}/240p_%03d.ts", f"{output_dir}/240p.m3u8",
+                "-map", "[v2out]", "-c:v:1", "libx264", "-b:v:1", "800k", "-map", "a:0", "-c:a:1", "aac",
+                "-f", "hls", "-hls_time", "10", "-hls_playlist_type", "vod",
+                "-hls_segment_filename", f"{output_dir}/360p_%03d.ts", f"{output_dir}/360p.m3u8",
+                "-map", "[v3out]", "-c:v:2", "libx264", "-b:v:2", "1400k", "-map", "a:0", "-c:a:2", "aac",
+                "-f", "hls", "-hls_time", "10", "-hls_playlist_type", "vod",
+                "-hls_segment_filename", f"{output_dir}/720p_%03d.ts", f"{output_dir}/720p.m3u8"
+            ]
+            
+            process = subprocess.Popen(cmd, stdout=subprocess.PIPE, stderr=subprocess.PIPE)
+            stdout, stderr = process.communicate()
+            
+            if process.returncode != 0:
+                raise Exception(f"FFmpeg conversion failed: {stderr.decode()}")
+            
+            # Upload all generated files to Azure
+            master_url = ""
+            variant_playlist_urls = {
+                "240p": "",
+                "360p": "",
+                "720p": ""
+            }
+            segment_urls = []
+            
+            for root, _, files in os.walk(output_dir):
+                for file in files:
+                    file_path = os.path.join(root, file)
+                    # Remove the temp directory path to get the relative path
+                    relative_path = os.path.relpath(file_path, temp_dir)
+                    blob_name = relative_path
+                    
+                    with open(file_path, "rb") as f:
+                        file_data = f.read()
+                        url = upload_to_azure(file_data, blob_name)
+                        
+                        if file == "master.m3u8":
+                            master_url = url
+                        elif file.endswith(".m3u8"):
+                            quality = file.split(".")[0]  # e.g., "240p"
+                            variant_playlist_urls[quality] = url
+                        elif file.endswith(".ts"):
+                            segment_urls.append(url)
+            
+            return {
+                "master_url": master_url,
+                "playlist_urls": variant_playlist_urls,
+                "segment_urls": segment_urls
+            }
+            
+    except Exception as e:
+        logger.error(f"Error in convert_and_upload_hls: {str(e)}", exc_info=True)
+        raise Exception(f"Failed to convert and upload HLS: {str(e)}")
+    
+
+def get_teams_access_token() -> str:
+    logger.info("Getting Microsoft Graph API token...")
+    client_id = os.getenv("TEAMS_CLIENT_ID")
+    client_secret = os.getenv("TEAMS_CLIENT_SECRET")
+    tenant_id = os.getenv("TEAMS_TENANT_ID")
+
+    if not all([client_id, client_secret, tenant_id]):
+        raise HTTPException(status_code=500, detail="Missing Teams credentials")
+
+    authority = f"https://login.microsoftonline.com/{tenant_id}"
+    app = ConfidentialClientApplication(
+        client_id=client_id,
+        client_credential=client_secret,
+        authority=authority
+    )
+    scopes = ["https://graph.microsoft.com/.default"]
+    result = app.acquire_token_for_client(scopes=scopes)
+
+    if "access_token" not in result:
+        raise HTTPException(status_code=500, detail="Token fetch failed: " + result.get("error_description", ""))
+    
+    return result["access_token"]
+
+
+
+@router.get("/teams-recordings", response_model=TeamsRecordingResponse)
+async def get_teams_recordings():
+    """
+    Fetch Teams meeting recordings from users' OneDrive "Recordings" folders.
+    """
+    try:
+        logger.info("Fetching Teams recordings from OneDrive folders...")
+        token = get_teams_access_token()
+        headers = {
+            "Authorization": f"Bearer {token}",
+            "Content-Type": "application/json"
+        }
+
+        # Get all users (you may paginate or limit if needed)
+        users_res = requests.get("https://graph.microsoft.com/v1.0/users", headers=headers)
+        if users_res.status_code != 200:
+            raise HTTPException(status_code=users_res.status_code, detail=users_res.text)
+
+        users = users_res.json().get("value", [])
+        recordings = []
+
+        for user in users:
+            user_id = user.get("id")
+            if not user_id:
+                continue
+
+            try:
+                # Fetch 'Recordings' folder files
+                recordings_url = f"https://graph.microsoft.com/v1.0/users/{user_id}/drive/root:/Recordings:/children"
+                rec_res = requests.get(recordings_url, headers=headers)
+
+                if rec_res.status_code != 200:
+                    logger.warning(f"Skipped user {user_id}: {rec_res.text}")
+                    continue
+
+                for file in rec_res.json().get("value", []):
+                    if file["name"].endswith(".mp4"):
+                        recordings.append(TeamsRecordingInfo(
+                            name=file["name"],
+                            download_url=file["@microsoft.graph.downloadUrl"],
+                            size=file["size"],
+                            created_date=file["createdDateTime"]
+                        ))
+
+            except Exception as e:
+                logger.error(f"Error fetching recordings for user {user_id}: {str(e)}")
+                continue
+
+        recordings.sort(key=lambda x: x.created_date, reverse=True)
+
+        return TeamsRecordingResponse(
+            recordings=recordings,
+            total_count=len(recordings),
+            message=f"Fetched {len(recordings)} recordings from OneDrive."
+        )
+
+    except Exception as e:
+        logger.error(f"Error in fetching recordings: {str(e)}", exc_info=True)
+        raise HTTPException(status_code=500, detail=f"Failed to fetch recordings: {str(e)}")
+
+@router.post("/transcribe/{video_name}", response_model=TranscriptionResponse)
+async def transcribe_video(video_name: str, quality: str = "240p", language: str = "en"):
+    """
+    Transcribe an HLS video stored in Azure Blob Storage
+    Parameters:
+        - video_name: Base name of the video (without extension)
+        - quality: Video quality to use for transcription (default: 240p since we only need audio)
+        - language: Language code for transcription (default: en for English)
+    """
+    try:
+        logger.info(f"Starting transcription for HLS video: {video_name}")
+        
+        # Construct the master playlist name
+        master_playlist_name = f"{video_name}/master.m3u8"
+        
+        # Get the blob client for the master playlist
+        master_blob_client = container_client.get_blob_client(master_playlist_name)
+        
+        # Check if master playlist exists
+        if not master_blob_client.exists():
+            raise HTTPException(
+                status_code=404,
+                detail=f"Video {video_name} not found in storage"
+            )
+        
+        # Create a temporary directory for processing
+        with tempfile.TemporaryDirectory() as temp_dir:
+            # Download and process HLS content
+            master_playlist_path = os.path.join(temp_dir, "master.m3u8")
+            combined_audio_path = os.path.join(temp_dir, "combined_audio.wav")
+            
+            # Download master playlist
+            logger.info("Downloading master playlist...")
+            master_playlist_content = master_blob_client.download_blob().readall()
+            with open(master_playlist_path, "wb") as f:
+                f.write(master_playlist_content)
+            
+            # Parse master playlist
+            master_playlist = m3u8.load(master_playlist_path)
+            
+            # Find the requested quality playlist
+            selected_playlist = None
+            for playlist in master_playlist.playlists:
+                if quality in playlist.uri:
+                    selected_playlist = playlist
+                    break
+            
+            if not selected_playlist:
+                raise HTTPException(
+                    status_code=400,
+                    detail=f"Requested quality {quality} not found"
+                )
+            
+            # Download variant playlist
+            variant_playlist_name = f"{video_name}/{selected_playlist.uri}"
+            variant_blob_client = container_client.get_blob_client(variant_playlist_name)
+            variant_playlist_content = variant_blob_client.download_blob().readall()
+            variant_playlist_path = os.path.join(temp_dir, selected_playlist.uri)
+            
+            with open(variant_playlist_path, "wb") as f:
+                f.write(variant_playlist_content)
+            
+            # Parse variant playlist
+            variant_playlist = m3u8.load(variant_playlist_path)
+            
+            try:
+                # Download all segments and extract audio
+                logger.info(f"Processing {len(variant_playlist.segments)} HLS segments...")
+                
+                # Create a file listing all segments for ffmpeg
+                segments_list_path = os.path.join(temp_dir, "segments.txt")
+                downloaded_segments = []
+                
+                # Download all segments first
+                for idx, segment in enumerate(variant_playlist.segments):
+                    segment_name = f"{video_name}/{segment.uri}"
+                    segment_path = os.path.join(temp_dir, f"segment_{idx}.ts")
+                    logger.info(f"Downloading segment {idx + 1}/{len(variant_playlist.segments)}: {segment.uri}")
+                    
+                    # Download segment
+                    segment_blob_client = container_client.get_blob_client(segment_name)
+                    with open(segment_path, "wb") as f:
+                        f.write(segment_blob_client.download_blob().readall())
+                    downloaded_segments.append(segment_path)
+                
+                # Create a concat file for ffmpeg
+                with open(segments_list_path, "w") as f:
+                    for segment_path in downloaded_segments:
+                        f.write(f"file '{segment_path}'\n")
+                
+                # Combine all segments directly into a single audio file
+                logger.info("Combining all segments and extracting audio...")
+                combine_command = [
+                    "ffmpeg",
+                    "-y",
+                    "-f", "concat",
+                    "-safe", "0",
+                    "-i", segments_list_path,
+                    "-ar", "16000",  # Whisper expects 16kHz
+                    "-ac", "1",      # Mono channel
+                    "-f", "wav",
+                    combined_audio_path
+                ]
+                
+                process = subprocess.run(combine_command, stdout=subprocess.PIPE, stderr=subprocess.PIPE)
+                if process.returncode != 0:
+                    raise Exception(f"Failed to combine segments and extract audio: {process.stderr.decode()}")
+                
+                # Clean up segment files after combining
+                for segment_path in downloaded_segments:
+                    os.remove(segment_path)
+                
+                # Initialize Whisper model and transcribe
+                logger.info("Initializing Whisper model...")
+                model = WhisperModel("base", compute_type="auto")
+                
+                logger.info("Transcribing complete audio...")
+                segments, info = model.transcribe(
+                    combined_audio_path,
+                    language=language,
+                    task="transcribe"
+                )
+                
+                logger.info(f"Detected language '{info.language}' with probability {info.language_probability:.2f}")
+                
+                # Process segments
+                transcript_segments = []
+                full_transcript = []
+                
+                for segment in segments:
+                    segment_info = {
+                        "start": segment.start,
+                        "end": segment.end,
+                        "text": segment.text
+                    }
+                    transcript_segments.append(segment_info)
+                    full_transcript.append(segment.text)
+                
+                logger.info(f"Transcription completed with {len(transcript_segments)} segments")
+                
+                return TranscriptionResponse(
+                    video_name=video_name,
+                    transcript=" ".join(full_transcript),
+                    status="success",
+                    segments=transcript_segments
+                )
+                
+            finally:
+                # Clean up temporary files
+                for file in [combined_audio_path, segments_list_path]:
+                    if os.path.exists(file):
+                        os.remove(file)
+                
+    except Exception as e:
+        logger.error(f"Error in transcribe_video: {str(e)}", exc_info=True)
+        raise HTTPException(
+            status_code=500,
+            detail=f"Failed to transcribe video: {str(e)}"
+        )

@@ -4,7 +4,7 @@ from datetime import datetime, timezone
 from typing import Optional
 
 class CourseType(SQLModel, table=True):
-    __tablename__ = "coursetype"
+    __tablename__ = "course_type"
     __table_args__ = {"schema": "cou_course"}
 
     id: Optional[int] = Field(default=None, primary_key=True)

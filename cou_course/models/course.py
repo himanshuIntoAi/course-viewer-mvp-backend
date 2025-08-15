@@ -1,7 +1,15 @@
-# cou_admin/models/country.py
 from sqlmodel import SQLModel, Field, Relationship
-from typing import Optional
+from typing import Optional, TYPE_CHECKING, List
 from datetime import datetime, timezone
+
+if TYPE_CHECKING:
+    from cou_user.models.user import User
+    from cou_course.models.topic import Topic
+    from cou_course.models.lesson import Lesson
+    from cou_course.models.quiz import Quiz
+    from cou_course.models.mindmap import Mindmap
+    from cou_course.models.memory_game import MemoryGame
+    from cou_course.models.flashcard import Flashcard
 
 class Course(SQLModel, table=True):
     __tablename__ = "course"
@@ -10,18 +18,37 @@ class Course(SQLModel, table=True):
     id: Optional[int] = Field(default=None, primary_key=True)
     title: str = Field(max_length=255)
     description: Optional[str] = None
-    category_id: Optional[int] = Field(default=None, foreign_key="cou_course.category.id")
-    subcategory_id: Optional[int] = Field(default=None, foreign_key="cou_course.subcategory.id")
-    course_type_id: Optional[int] = Field(default=None, foreign_key="cou_course.coursetype.id")
-    sells_type_id: Optional[int] = Field(default=None, foreign_key="cou_course.sellstype.id")
-    mentor_id: Optional[int] = Field(default=None, foreign_key="cou_user.user.id")
+    what_will_you_learn: Optional[str] = None
+    category_id: Optional[int] = Field(default=None, foreign_key="cou_course.course_category.id")
+    subcategory_id: Optional[int] = Field(default=None, foreign_key="cou_course.course_subcategory.id")
+    course_type_id: Optional[int] = Field(default=None, foreign_key="cou_course.course_type.id")
+    sells_type_id: Optional[int] = Field(default=None, foreign_key="cou_course.sells_type.id")
     language_id: Optional[int] = Field(default=None, foreign_key="cou_admin.language.id")
     created_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
     updated_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
     created_by: Optional[int] = None
     updated_by: Optional[int] = None
-    total_enrollments: Optional[int] = Field(default=0)
     is_flagship: Optional[bool] = Field(default=False)
     active: Optional[bool] = Field(default=True)
-    mentor_id: Optional[int] = Field(default=None, foreign_key="cou_user.mentor.id")
-    mentor: Optional["Mentor"] = Relationship(back_populates="courses")
+    ratings: Optional[float] = Field(default=0.0)
+    price: Optional[float] = Field(default=0.0)
+    mentor_id: Optional[int] = Field(default=None, foreign_key="cou_user.user.id")
+    IT: Optional[bool] = Field(default=None, sa_column_kwargs={"name": "IT"})
+    Coding_Required: Optional[bool] = Field(default=None, sa_column_kwargs={"name": "Coding_Required"})
+    Avg_Completion_Time: Optional[int] = Field(default=None, sa_column_kwargs={"name": "Avg_Completion_TIme"})
+    Course_level: Optional[str] = Field(default=None, sa_column_kwargs={"name": "Course_level"})  # "beginner", "intermediate", "advanced"
+    code: Optional[str] = Field(default=None, max_length=100)  # Course code/identifier
+    code_language: Optional[str] = Field(default=None, max_length=50)  # Programming language for coding courses
+    
+    # Relationships
+    instructor: Optional["User"] = Relationship(
+        back_populates="courses",
+        sa_relationship_kwargs={"lazy": "joined"}
+    )
+    topics: List["Topic"] = Relationship(back_populates="course")
+    lessons: List["Lesson"] = Relationship(back_populates="course")
+    quizzes: List["Quiz"] = Relationship(back_populates="course")
+    mindmaps: List["Mindmap"] = Relationship(back_populates="course")
+    memory_games: List["MemoryGame"] = Relationship(back_populates="course")
+    flashcards: List["Flashcard"] = Relationship(back_populates="course")
+    lesson_orders: List["LessonOrder"] = Relationship(back_populates="course")

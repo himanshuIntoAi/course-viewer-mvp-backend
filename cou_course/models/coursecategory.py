@@ -3,7 +3,7 @@ from datetime import datetime
 from typing import Optional
 
 class CourseCategory(SQLModel, table=True):
-    __tablename__ = "coursecategory"
+    __tablename__ = "course_category"
     __table_args__ = {"schema": "cou_course"}
 
     id: Optional[int] = Field(default=None, primary_key=True)
