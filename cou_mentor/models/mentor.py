@@ -16,7 +16,13 @@ class Mentor(SQLModel, table=True):
     created_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
     updated_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
     user: Optional["User"] = Relationship(back_populates="mentor")
-    courses: List["Course"] = Relationship(back_populates="mentor")
+    courses: List["Course"] = Relationship(
+        back_populates="mentor",
+        sa_relationship_kwargs={
+            "primaryjoin": "foreign(Course.mentor_id)==Mentor.user_id",
+            "lazy": "selectin"
+        }
+    )
     
     @property
     def total_students(self) -> int:

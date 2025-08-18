@@ -1,7 +1,7 @@
 from typing import Optional, List
 from sqlmodel import Session, select
 from cou_course.models.course import Course
-from cou_user.models.user import User
+from cou_mentor.models.mentor import Mentor
 import logging
 from cou_course.models.coursecategory import CourseCategory
 from cou_course.models.coursesubcategory import CourseSubcategory
@@ -19,7 +19,7 @@ class CourseRepository:
     def get_course_by_id(session: Session, course_id: int) -> Optional[Course]:
         statement = (
             select(Course)
-            .join(User, Course.mentor_id == User.id)
+            .join(Mentor, Course.mentor_id == Mentor.user_id)
             .where(Course.id == course_id)
         )
         return session.exec(statement).first()
@@ -28,8 +28,7 @@ class CourseRepository:
     def get_all_courses(session: Session , skip: int , limit: int) -> List[Course]:
         statement = (
             select(Course)
-            .join(User, Course.mentor_id == User.id)
-            .where(User.is_instructor == True)
+            .join(Mentor, Course.mentor_id == Mentor.user_id)
             .offset(skip)
             .limit(limit)
         )
@@ -58,7 +57,7 @@ class CourseRepository:
     def get_courses_by_mentor(session: Session, mentor_id: int):
         statement = (
             select(Course)
-            .join(User, Course.mentor_id == User.id)
+            .join(Mentor, Course.mentor_id == Mentor.user_id)
             .where(Course.mentor_id == mentor_id)
         )
         return session.exec(statement).all()

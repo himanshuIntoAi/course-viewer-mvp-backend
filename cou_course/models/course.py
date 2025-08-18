@@ -4,12 +4,18 @@ from datetime import datetime, timezone
 
 if TYPE_CHECKING:
     from cou_user.models.user import User
+    from cou_mentor.models.mentor import Mentor
     from cou_course.models.topic import Topic
     from cou_course.models.lesson import Lesson
     from cou_course.models.quiz import Quiz
     from cou_course.models.mindmap import Mindmap
     from cou_course.models.memory_game import MemoryGame
     from cou_course.models.flashcard import Flashcard
+    from cou_course.models.lesson_order import LessonOrder
+
+# Ensure LessonOrder mapper is registered before resolving relationships
+from cou_course.models.lesson_order import LessonOrder  # noqa: F401
+from cou_mentor.models.mentor import Mentor  # noqa: F401
 
 class Course(SQLModel, table=True):
     __tablename__ = "course"
@@ -22,7 +28,7 @@ class Course(SQLModel, table=True):
     category_id: Optional[int] = Field(default=None, foreign_key="cou_course.course_category.id")
     subcategory_id: Optional[int] = Field(default=None, foreign_key="cou_course.course_subcategory.id")
     course_type_id: Optional[int] = Field(default=None, foreign_key="cou_course.course_type.id")
-    sells_type_id: Optional[int] = Field(default=None, foreign_key="cou_course.sells_type.id")
+    sells_type_id: Optional[int] = Field(default=None, foreign_key="cou_course.course_type.id")
     language_id: Optional[int] = Field(default=None, foreign_key="cou_admin.language.id")
     created_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
     updated_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
@@ -32,7 +38,7 @@ class Course(SQLModel, table=True):
     active: Optional[bool] = Field(default=True)
     ratings: Optional[float] = Field(default=0.0)
     price: Optional[float] = Field(default=0.0)
-    mentor_id: Optional[int] = Field(default=None, foreign_key="cou_user.user.id")
+    mentor_id: Optional[int] = Field(default=None, foreign_key="cou_user.mentor.user_id")
     IT: Optional[bool] = Field(default=None, sa_column_kwargs={"name": "IT"})
     Coding_Required: Optional[bool] = Field(default=None, sa_column_kwargs={"name": "Coding_Required"})
     Avg_Completion_Time: Optional[int] = Field(default=None, sa_column_kwargs={"name": "Avg_Completion_TIme"})
@@ -41,7 +47,7 @@ class Course(SQLModel, table=True):
     code_language: Optional[str] = Field(default=None, max_length=50)  # Programming language for coding courses
     
     # Relationships
-    instructor: Optional["User"] = Relationship(
+    mentor: Optional["Mentor"] = Relationship(
         back_populates="courses",
         sa_relationship_kwargs={"lazy": "joined"}
     )

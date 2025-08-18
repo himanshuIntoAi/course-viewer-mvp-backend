@@ -18,6 +18,19 @@ class Settings(BaseSettings):
     FACEBOOK_CLIENT_SECRET: str
     FACEBOOK_REDIRECT_URI: str = "http://localhost:3000/auth/facebook/callback"
     
+    # Teams OAuth settings
+    TEAMS_CLIENT_ID: Optional[str] = None
+    TEAMS_CLIENT_SECRET: Optional[str] = None
+    TEAMS_TENANT_ID: Optional[str] = None
+    
+    # Zoom settings
+    ZOOM_ACCOUNT_ID: Optional[str] = None
+    ZOOM_CLIENT_ID: Optional[str] = None
+    ZOOM_CLIENT_SECRET: Optional[str] = None
+    
+    # Azure Storage settings
+    AZURE_STORAGE_CONNECTION_STRING: Optional[str] = None
+    
     # JWT settings
     JWT_SECRET_KEY: str
     JWT_ALGORITHM: str = "HS256"

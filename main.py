@@ -8,6 +8,9 @@ from cou_admin.api.currency_routes import router as currency_router
 from cou_user.api.user_routes import router as user_router
 from cou_course.api.course_routes import router as course_router
 from cou_course.api.coursecategory_routes import router as coursecategory_router
+from cou_course.api.coursesubcategory_routes import router as coursesubcategory_router
+from cou_course.api.memory_game_pair_routes import router as memory_game_pair_router
+from cou_course.api.course_learning import router as course_learning_router
 from fastapi.middleware.cors import CORSMiddleware
 from auth_bl import auth_router
 import logging
@@ -74,6 +77,9 @@ app.include_router(currency_router, prefix="/api/v1")
 app.include_router(user_router, prefix="/api/v1")
 app.include_router(course_router, prefix="/api/v1")
 app.include_router(coursecategory_router, prefix="/api/v1")
+app.include_router(coursesubcategory_router, prefix="/api/v1")
+app.include_router(memory_game_pair_router, prefix="/api/v1")
+app.include_router(course_learning_router, prefix="/api/v1")
 app.include_router(auth_router, prefix="/api/v1")
 app.include_router(mentor_router, prefix="/api/v1")
 

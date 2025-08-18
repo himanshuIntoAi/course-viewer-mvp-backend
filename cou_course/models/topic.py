@@ -9,6 +9,10 @@ if TYPE_CHECKING:
     from cou_course.models.mindmap import Mindmap
     from cou_course.models.memory_game import MemoryGame
     from cou_course.models.flashcard import Flashcard
+    from cou_course.models.lesson_order import LessonOrder
+
+# Ensure LessonOrder mapper is registered before resolving relationships
+from cou_course.models.lesson_order import LessonOrder  # noqa: F401
 
 class Topic(SQLModel, table=True):
     __tablename__ = "topic"
