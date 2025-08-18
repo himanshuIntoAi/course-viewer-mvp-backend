@@ -16,6 +16,7 @@ from auth_bl import auth_router
 import logging
 from cou_mentor.api.mentor_routes import router as mentor_router
 from fastapi import FastAPI
+import os
 
 #from cou_admin.api.state_routes import router as state_router
 
@@ -51,11 +52,18 @@ app = FastAPI(
     docs_url="/docs",
     redoc_url="/redoc"
 )
+SKIP_DB_INIT = os.getenv("SKIP_DB_INIT", "false").lower() == "true"
 
 # Create database tables on startup
 @app.on_event("startup")
 async def on_startup():
-    create_db_and_tables()
+    if SKIP_DB_INIT:
+        logging.warning("Skipping DB init at startup")
+        return
+    try:
+        create_db_and_tables()
+    except Exception:
+        logging.exception("DB init failed")
 
 # Add health check endpoint
 @app.get("/health")

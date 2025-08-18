@@ -3,6 +3,9 @@ from pydantic_settings import BaseSettings
 from typing import Optional
 
 class Settings(BaseSettings):
+    # Database settings
+    DB_URL: Optional[str] = None
+    
     # Google OAuth settings
     GOOGLE_CLIENT_ID: str
     GOOGLE_CLIENT_SECRET: str
