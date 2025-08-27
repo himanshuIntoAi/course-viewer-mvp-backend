@@ -73,7 +73,7 @@ async def health_check():
 # Add CORS middleware
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["http://localhost:3000"],  # Frontend URL
+    allow_origins=["http://localhost:3000" , "https://course-viewer-mvp-myt9-git-c-13bfe6-himanshus-projects-717faff6.vercel.app"],  # Frontend URL
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
