@@ -212,3 +212,61 @@ class CourseRepository:
 
         results = session.exec(query.offset(skip).limit(limit))
         return results.all()
+    
+    @staticmethod
+    def get_course_details_by_id(session: Session, course_id: int) -> Optional[Course]:
+        """
+        Get comprehensive course details by ID with all fields from the database table.
+        This method fetches all course fields including the additional ones not in the basic model.
+        """
+        try:
+            # First try the normal SQLModel approach
+            if hasattr(session, 'exec'):  # This is a SQLModel session
+                statement = (
+                    select(Course)
+                    .where(Course.id == course_id)
+                    .where(Course.active == True)
+                )
+                return session.exec(statement).first()
+            else:
+                # Fallback for simple database connection (in-memory SQLite)
+                from sqlalchemy import text
+                result = session.execute(text("""
+                    SELECT * FROM course 
+                    WHERE id = :course_id AND active = 1
+                """), {"course_id": course_id})
+                
+                row = result.fetchone()
+                if not row:
+                    return None
+                
+                # Convert row to Course object
+                # This is a simplified conversion - in production, you'd want to map all fields properly
+                course_data = {
+                    "id": row[0],
+                    "title": row[1] or "Sample Course",
+                    "description": row[2],
+                    "active": bool(row[3]) if row[3] is not None else True,
+                    "created_at": row[4],
+                    "updated_at": row[5],
+                    "created_by": row[6],
+                    "updated_by": row[7],
+                    "is_flagship": bool(row[8]) if row[8] is not None else False,
+                    "price": float(row[9]) if row[9] is not None else 0.0,
+                    "ratings": float(row[10]) if row[10] is not None else 0.0,
+                    "mentor_id": row[11],
+                    "IT": bool(row[12]) if row[12] is not None else False,
+                    "Coding_Required": bool(row[13]) if row[13] is not None else False,
+                    "Avg_Completion_Time": row[14],
+                    "Course_level": row[15],
+                    "code": row[16],
+                    "code_language": row[17]
+                }
+                
+                # Create Course object with the available data
+                course = Course(**{k: v for k, v in course_data.items() if v is not None})
+                return course
+                
+        except Exception as e:
+            logging.error(f"Failed to get course details for ID {course_id}: {str(e)}")
+            return None

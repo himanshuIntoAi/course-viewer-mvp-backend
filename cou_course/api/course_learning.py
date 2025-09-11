@@ -20,6 +20,8 @@ from cou_course.schemas.flashcard_schema import FlashcardCreate, FlashcardRead, 
 from cou_course.schemas.mindmap_schema import MindmapCreate, MindmapRead, MindmapUpdate
 from cou_course.schemas.memory_game_schema import MemoryGameCreate, MemoryGameRead, MemoryGameUpdate
 from cou_course.schemas.topic_schema import TopicCreate, TopicRead, TopicUpdate
+from cou_course.schemas.course_schema import CourseDetailsRead
+from cou_course.models.question import QuestionType
 from cou_course.repositories.lesson_repository import LessonRepository
 from cou_course.repositories.quiz_repository import QuizRepository
 from cou_course.repositories.question_repository import QuestionRepository
@@ -27,6 +29,7 @@ from cou_course.repositories.flashcard_repository import FlashcardRepository
 from cou_course.repositories.mindmap_repository import MindmapRepository
 from cou_course.repositories.memory_game_repository import MemoryGameRepository
 from cou_course.repositories.topic_repository import TopicRepository
+from cou_course.repositories.course_repository import CourseRepository
 
 
 
@@ -235,6 +238,137 @@ def get_all_hls_lessons():
     except Exception as e:
         logger.error(f"Failed to get all HLS lessons: {str(e)}")
         raise HTTPException(status_code=500, detail=f"Failed to get HLS lessons: {str(e)}")
+
+# ==================== COURSE DETAILS APIs ====================
+
+@router.get("/courses/{course_id}/details", response_model=CourseDetailsRead)
+def get_course_details(course_id: int, session: Session = Depends(get_session)):
+    """Get comprehensive course details by course ID"""
+    try:
+        # First try the normal SQLModel approach
+        if hasattr(session, 'exec'):  # This is a SQLModel session
+            course = CourseRepository.get_course_details_by_id(session, course_id)
+            if not course:
+                raise HTTPException(status_code=404, detail="Course not found")
+            
+            # Convert Course model to CourseDetailsRead schema
+            course_dict = course.dict()
+            
+            # Add instructor information if available
+            instructor_info = None
+            if hasattr(course, 'mentor') and course.mentor:
+                instructor_info = {
+                    "id": course.mentor.user_id,
+                    "display_name": f"{course.mentor.first_name} {course.mentor.last_name}".strip(),
+                    "first_name": course.mentor.first_name,
+                    "last_name": course.mentor.last_name
+                }
+            
+            course_dict["instructor"] = instructor_info
+            
+            return CourseDetailsRead(**course_dict)
+        else:
+            # Fallback for simple database connection (in-memory SQLite)
+            logger.info("Using fallback implementation for course details with simple database tables")
+            
+            # Get course details from database
+            result = session.execute(text("""
+                SELECT id, title, description, active, created_at, updated_at, 
+                       created_by, updated_by, is_flagship, price, ratings, mentor_id,
+                       IT, Coding_Required, Avg_Completion_TIme, Course_level
+                FROM course 
+                WHERE id = :course_id AND active = 1
+            """), {"course_id": course_id})
+            
+            row = result.fetchone()
+            if not row:
+                raise HTTPException(status_code=404, detail="Course not found")
+            
+            from datetime import datetime, timezone
+            
+            # Create course details response
+            course_details = {
+                "id": row[0],
+                "title": row[1] or "Sample Course",
+                "description": row[2],
+                "active": bool(row[3]) if row[3] is not None else True,
+                "created_at": row[4] or datetime.now(timezone.utc),
+                "updated_at": row[5] or datetime.now(timezone.utc),
+                "created_by": row[6],
+                "updated_by": row[7],
+                "is_flagship": bool(row[8]) if row[8] is not None else False,
+                "price": float(row[9]) if row[9] is not None else 0.0,
+                "ratings": int(row[10]) if row[10] is not None else None,
+                "mentor_id": row[11],
+                "IT": bool(row[12]) if row[12] is not None else None,
+                "Coding_Required": bool(row[13]) if row[13] is not None else None,
+                "Avg_Completion_TIme": row[14],
+                "Course_level": row[15],
+                "what_will_you_learn": None,
+                "category_id": None,
+                "subcategory_id": None,
+                "course_type_id": None,
+                "sells_type_id": None,
+                "language_id": None,
+                "slug": None,
+                "discount": None,
+                "introduction_video_link": None,
+                "prerequisites": None,
+                "skill_level": None,
+                "max_students": None,
+                "thumbnail": None,
+                "time": None,
+                "is_live": None,
+                "audience": None,
+                "duration_hours": None,
+                "course_bundle": None,
+                "course_1": None,
+                "course_duration": None,
+                "duration_unit": "Days",
+                "recurrence": "Weekly",
+                "start_date": None,
+                "end_date": None,
+                "intro_video_source": None,
+                "intro_video_url": None,
+                "intro_video_filename": None,
+                "tags": None,
+                "learning_outcomes": None,
+                "targeted_audience": None,
+                "material_included": None,
+                "requirements_text": None,
+                "expiration_setting": "Expiration",
+                "expiration_date": None,
+                "expiration_time": None,
+                "student_interaction_with_tutor": False,
+                "co_peer_interaction": False,
+                "student_upload_file_access": False,
+                "skip_topics": False,
+                "skip_lessons": False,
+                "mandatory_attendance": False,
+                "installments_availability": False,
+                "refund_upon_cancellation": False,
+                "course_switch": False,
+                "timeline_extension": False,
+                "publish_date": None,
+                "publish_time": None,
+                "enrollment_expiration": 0,
+                "is_public_course": True,
+                "has_qa": True,
+                "regular_price": None,
+                "sale_price": None,
+                "pricing_type": "PAID",
+                "instructor_type": None,
+                "publish_type": "Public",
+                "instructor": None
+            }
+            
+            return CourseDetailsRead(**course_details)
+            
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Failed to get course details for course {course_id}: {str(e)}")
+        raise HTTPException(status_code=500, detail=f"Failed to get course details: {str(e)}")
 
 # ==================== LESSON APIs ====================
 
@@ -466,11 +600,50 @@ def get_quiz_questions(quiz_id: int, session: Session = Depends(get_session)):
             
             for row in result.fetchall():
                 current_time = datetime.now(timezone.utc)
+                
+                # Map database question_type values to enum values
+                question_type_mapping = {
+                    "True/False": QuestionType.TRUE_FALSE,
+                    "true/false": QuestionType.TRUE_FALSE,
+                    "TRUE_FALSE": QuestionType.TRUE_FALSE,
+                    "Multiple Choice": QuestionType.MULTIPLE,
+                    "multiple_choice": QuestionType.MULTIPLE,
+                    "MULTIPLE": QuestionType.MULTIPLE,
+                    "Single Choice": QuestionType.SINGLE,
+                    "single_choice": QuestionType.SINGLE,
+                    "SINGLE": QuestionType.SINGLE,
+                    "Fill in the Blank": QuestionType.FILL_BLANK,
+                    "fill_blank": QuestionType.FILL_BLANK,
+                    "FILL_BLANK": QuestionType.FILL_BLANK,
+                    "Open Ended": QuestionType.OPEN_ENDED,
+                    "open_ended": QuestionType.OPEN_ENDED,
+                    "OPEN_ENDED": QuestionType.OPEN_ENDED,
+                    "Matching Text": QuestionType.MATCHING_TEXT,
+                    "matching_text": QuestionType.MATCHING_TEXT,
+                    "MATCHING_TEXT": QuestionType.MATCHING_TEXT,
+                    "Matching Image": QuestionType.MATCHING_IMAGE,
+                    "matching_image": QuestionType.MATCHING_IMAGE,
+                    "MATCHING_IMAGE": QuestionType.MATCHING_IMAGE,
+                    "Sort Answer": QuestionType.SORT_ANSWER,
+                    "sort_answer": QuestionType.SORT_ANSWER,
+                    "SORT_ANSWER": QuestionType.SORT_ANSWER
+                }
+                
+                # Get the mapped question type or default to SINGLE
+                db_question_type = row[3] or "SINGLE"
+                mapped_question_type = question_type_mapping.get(db_question_type, QuestionType.SINGLE)
+                
+                # Debug logging
+                logger.info(f"Database question_type: '{db_question_type}', Mapped to: '{mapped_question_type}'")
+                
                 question_data = {
                     "id": row[0],
                     "quiz_id": row[1],
                     "question_text": row[2] or "Sample Question",
-                    "question_type": row[3] or "multiple_choice",
+                    "type": mapped_question_type,  # Use 'type' instead of 'question_type'
+                    "points": 1,  # Default points
+                    "answers": None,  # Default answers
+                    "question_order": None,  # Default order
                     "active": bool(row[4]),
                     "created_at": current_time,
                     "created_by": 1,
