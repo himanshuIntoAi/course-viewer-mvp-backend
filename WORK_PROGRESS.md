@@ -187,3 +187,26 @@ The database table `cou_course.question` stores the column as `type`, but the ra
 
 ### Status
 ✅ FIXED - Error resolved; queries now reference the correct column.
+
+---
+
+## Git Security Issue Resolution
+
+### Issue
+GitHub push protection blocked repository push due to detected secrets in commit `ee09d2c9b41e5408bb1e2ce5aa2531b8ccd247f4`:
+- Google OAuth Client ID and Secret
+- Azure Active Directory Application Secret  
+- Azure Storage Account Access Key
+
+### Solution
+- **Removed problematic commits** using `git reset --soft e5e0d50`
+- **Cleaned repository state** by unstaging and discarding all changes
+- **Removed "sample env copy" file** that contained the secrets
+- **Repository now clean** and aligned with origin/main
+
+### Files Affected
+- Removed: `sample env copy` (contained secrets)
+- Reset: All commits after `e5e0d50`
+
+### Status
+✅ **RESOLVED** - Secrets removed, repository clean and ready for safe commits.
