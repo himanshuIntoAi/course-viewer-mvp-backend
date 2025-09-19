@@ -43,8 +43,9 @@ class Course(SQLModel, table=True):
     Coding_Required: Optional[bool] = Field(default=None, sa_column_kwargs={"name": "Coding_Required"})
     Avg_Completion_Time: Optional[int] = Field(default=None, sa_column_kwargs={"name": "Avg_Completion_TIme"})
     Course_level: Optional[str] = Field(default=None, sa_column_kwargs={"name": "Course_level"})  # "beginner", "intermediate", "advanced"
-    code: Optional[str] = Field(default=None, max_length=100)  # Course code/identifier
-    code_language: Optional[str] = Field(default=None, max_length=50)  # Programming language for coding courses
+    # Note: code and code_language fields removed as they don't exist in the database table
+    # code: Optional[str] = Field(default=None, max_length=100)  # Course code/identifier
+    # code_language: Optional[str] = Field(default=None, max_length=50)  # Programming language for coding courses
     
     # Relationships
     mentor: Optional["Mentor"] = Relationship(

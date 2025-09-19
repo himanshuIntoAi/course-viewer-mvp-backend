@@ -248,6 +248,7 @@ def get_course_details(course_id: int, session: Session = Depends(get_session)):
         # First try the normal SQLModel approach
         if hasattr(session, 'exec'):  # This is a SQLModel session
             course = CourseRepository.get_course_details_by_id(session, course_id)
+    
             if not course:
                 raise HTTPException(status_code=404, detail="Course not found")
             
@@ -268,101 +269,8 @@ def get_course_details(course_id: int, session: Session = Depends(get_session)):
             
             return CourseDetailsRead(**course_dict)
         else:
-            # Fallback for simple database connection (in-memory SQLite)
-            logger.info("Using fallback implementation for course details with simple database tables")
-            
-            # Get course details from database
-            result = session.execute(text("""
-                SELECT id, title, description, active, created_at, updated_at, 
-                       created_by, updated_by, is_flagship, price, ratings, mentor_id,
-                       IT, Coding_Required, Avg_Completion_TIme, Course_level
-                FROM course 
-                WHERE id = :course_id AND active = 1
-            """), {"course_id": course_id})
-            
-            row = result.fetchone()
-            if not row:
-                raise HTTPException(status_code=404, detail="Course not found")
-            
-            from datetime import datetime, timezone
-            
-            # Create course details response
-            course_details = {
-                "id": row[0],
-                "title": row[1] or "Sample Course",
-                "description": row[2],
-                "active": bool(row[3]) if row[3] is not None else True,
-                "created_at": row[4] or datetime.now(timezone.utc),
-                "updated_at": row[5] or datetime.now(timezone.utc),
-                "created_by": row[6],
-                "updated_by": row[7],
-                "is_flagship": bool(row[8]) if row[8] is not None else False,
-                "price": float(row[9]) if row[9] is not None else 0.0,
-                "ratings": int(row[10]) if row[10] is not None else None,
-                "mentor_id": row[11],
-                "IT": bool(row[12]) if row[12] is not None else None,
-                "Coding_Required": bool(row[13]) if row[13] is not None else None,
-                "Avg_Completion_TIme": row[14],
-                "Course_level": row[15],
-                "what_will_you_learn": None,
-                "category_id": None,
-                "subcategory_id": None,
-                "course_type_id": None,
-                "sells_type_id": None,
-                "language_id": None,
-                "slug": None,
-                "discount": None,
-                "introduction_video_link": None,
-                "prerequisites": None,
-                "skill_level": None,
-                "max_students": None,
-                "thumbnail": None,
-                "time": None,
-                "is_live": None,
-                "audience": None,
-                "duration_hours": None,
-                "course_bundle": None,
-                "course_1": None,
-                "course_duration": None,
-                "duration_unit": "Days",
-                "recurrence": "Weekly",
-                "start_date": None,
-                "end_date": None,
-                "intro_video_source": None,
-                "intro_video_url": None,
-                "intro_video_filename": None,
-                "tags": None,
-                "learning_outcomes": None,
-                "targeted_audience": None,
-                "material_included": None,
-                "requirements_text": None,
-                "expiration_setting": "Expiration",
-                "expiration_date": None,
-                "expiration_time": None,
-                "student_interaction_with_tutor": False,
-                "co_peer_interaction": False,
-                "student_upload_file_access": False,
-                "skip_topics": False,
-                "skip_lessons": False,
-                "mandatory_attendance": False,
-                "installments_availability": False,
-                "refund_upon_cancellation": False,
-                "course_switch": False,
-                "timeline_extension": False,
-                "publish_date": None,
-                "publish_time": None,
-                "enrollment_expiration": 0,
-                "is_public_course": True,
-                "has_qa": True,
-                "regular_price": None,
-                "sale_price": None,
-                "pricing_type": "PAID",
-                "instructor_type": None,
-                "publish_type": "Public",
-                "instructor": None
-            }
-            
-            return CourseDetailsRead(**course_details)
+           
+            return None
             
     except HTTPException:
         raise
