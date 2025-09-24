@@ -4,15 +4,15 @@ from datetime import datetime, timezone
 
 class Mentor(SQLModel, table=True):
     __tablename__ = "mentor"
-    __table_args__ = {"schema": "cou_user"}
+    __table_args__ = {"schema": "cou_mentor"}
 
     id: Optional[int] = Field(default=None, primary_key=True)
     user_id: int = Field(foreign_key="cou_user.user.id", unique=True)
     bio: Optional[str] = None
     expertise: Optional[str] = Field(default=None, max_length=500)
-    rating: Optional[float] = Field(default=0.0)
-    # total_students: Optional[int] = Field(default=0)
-    is_available: Optional[bool] = Field(default=True)  
+    designation: Optional[str] = Field(default=None, max_length=500)
+    # rating column does not exist in DB; removed to match schema
+    # is_available column does not exist in DB; removed to match schema
     created_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
     updated_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
     user: Optional["User"] = Relationship(back_populates="mentor")

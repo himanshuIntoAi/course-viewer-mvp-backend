@@ -28,7 +28,7 @@ class Course(SQLModel, table=True):
     category_id: Optional[int] = Field(default=None, foreign_key="cou_course.course_category.id")
     subcategory_id: Optional[int] = Field(default=None, foreign_key="cou_course.course_subcategory.id")
     course_type_id: Optional[int] = Field(default=None, foreign_key="cou_course.course_type.id")
-    sells_type_id: Optional[int] = Field(default=None, foreign_key="cou_course.course_type.id")
+    sells_type_id: Optional[int] = Field(default=None, foreign_key="cou_course.sells_type.id")
     language_id: Optional[int] = Field(default=None, foreign_key="cou_admin.language.id")
     created_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
     updated_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
@@ -36,9 +36,9 @@ class Course(SQLModel, table=True):
     updated_by: Optional[int] = None
     is_flagship: Optional[bool] = Field(default=False)
     active: Optional[bool] = Field(default=True)
-    ratings: Optional[float] = Field(default=0.0)
+    ratings: Optional[int] = Field(default=0)
     price: Optional[float] = Field(default=0.0)
-    mentor_id: Optional[int] = Field(default=None, foreign_key="cou_user.mentor.user_id")
+    mentor_id: Optional[int] = Field(default=None, foreign_key="cou_user.user.id")
     IT: Optional[bool] = Field(default=None, sa_column_kwargs={"name": "IT"})
     Coding_Required: Optional[bool] = Field(default=None, sa_column_kwargs={"name": "Coding_Required"})
     Avg_Completion_Time: Optional[int] = Field(default=None, sa_column_kwargs={"name": "Avg_Completion_TIme"})
@@ -50,7 +50,10 @@ class Course(SQLModel, table=True):
     # Relationships
     mentor: Optional["Mentor"] = Relationship(
         back_populates="courses",
-        sa_relationship_kwargs={"lazy": "joined"}
+        sa_relationship_kwargs={
+            "primaryjoin": "foreign(Course.mentor_id)==Mentor.user_id",
+            "lazy": "selectin"
+        }
     )
     topics: List["Topic"] = Relationship(back_populates="course")
     lessons: List["Lesson"] = Relationship(back_populates="course")

@@ -15,14 +15,12 @@ class RecurrenceType(str, Enum):
     MONTHLY = "Monthly"
     YEARLY = "Yearly"
 
+
 class InstructorInfo(BaseModel):
-    id: int
-    display_name: str
-    first_name: Optional[str]
-    last_name: Optional[str]
-    
-    class Config:
-        orm_mode = True
+    id: Optional[int] = None
+    name: Optional[str] = None
+    profession: Optional[str] = None
+
 
 class CourseBase(BaseModel):
     title: str
@@ -52,10 +50,15 @@ class CourseRead(CourseBase):
     id: int
     created_at: datetime
     updated_at: datetime
-    instructor: Optional[InstructorInfo]
+    instructor: Optional[InstructorInfo] = None
 
     class Config:
-        orm_mode = True
+        from_attributes = True
+
+
+class SubcategorySummary(BaseModel):
+    id: int
+    name: str
 
 class CourseDetailsRead(BaseModel):
     """Comprehensive course details schema matching the database table structure"""
@@ -135,4 +138,4 @@ class CourseDetailsRead(BaseModel):
     instructor: Optional[InstructorInfo] = None
 
     class Config:
-        orm_mode = True
+        from_attributes = True

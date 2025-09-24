@@ -254,17 +254,31 @@ def get_course_details(course_id: int, session: Session = Depends(get_session)):
             
             # Convert Course model to CourseDetailsRead schema
             course_dict = course.dict()
-            
-            # Add instructor information if available
+
+            # Add instructor information if available (mentor -> user for name fields)
             instructor_info = None
-            if hasattr(course, 'mentor') and course.mentor:
-                instructor_info = {
-                    "id": course.mentor.user_id,
-                    "display_name": f"{course.mentor.first_name} {course.mentor.last_name}".strip(),
-                    "first_name": course.mentor.first_name,
-                    "last_name": course.mentor.last_name
-                }
-            
+            try:
+                mentor_obj = getattr(course, 'mentor', None)
+                user_obj = getattr(mentor_obj, 'user', None) if mentor_obj else None
+
+                if mentor_obj:
+                    # Build name from User where available
+                    full_name = None
+                    if user_obj:
+                        full_name = (
+                            getattr(user_obj, 'display_name', None)
+                            or " ".join(filter(None, [getattr(user_obj, 'first_name', None), getattr(user_obj, 'last_name', None)])).strip()
+                        ) or None
+
+                    instructor_info = {
+                        "id": getattr(mentor_obj, 'user_id', None),
+                        "name": full_name,
+                        "profession": getattr(mentor_obj, 'designation', None)
+                    }
+            except Exception:
+                # If anything goes wrong constructing instructor, keep it None
+                instructor_info = None
+
             course_dict["instructor"] = instructor_info
             
             return CourseDetailsRead(**course_dict)

@@ -1,5 +1,7 @@
 from typing import Optional, List
 from sqlmodel import Session, select
+from sqlalchemy import func
+from cou_user.models.user import User
 from cou_course.models.course import Course
 from cou_mentor.models.mentor import Mentor
 import logging
@@ -19,7 +21,6 @@ class CourseRepository:
     def get_course_by_id(session: Session, course_id: int) -> Optional[Course]:
         statement = (
             select(Course)
-            .join(Mentor, Course.mentor_id == Mentor.user_id)
             .where(Course.id == course_id)
         )
         return session.exec(statement).first()
@@ -238,3 +239,47 @@ class CourseRepository:
         except Exception as e:
             logging.error(f"Failed to get course details for ID {course_id}: {str(e)}")
             return None
+
+    @staticmethod
+    def get_courses_by_subcategory_id(session: Session, subcategory_id: int, skip: int = 0, limit: int = 10) -> List[Course]:
+        """
+        Fetch courses that belong to the given subcategory id.
+        """
+        statement = (
+            select(Course)
+            .where(Course.subcategory_id == subcategory_id)
+            .offset(skip)
+            .limit(limit)
+        )
+        return session.exec(statement).all()
+
+    @staticmethod
+    def get_unique_subcategories(session: Session) -> List[dict]:
+        """
+        Return unique course subcategories (id + name) used by courses.
+        Based on Course.subcategory_id referencing cou_course.course_subcategory.id.
+        """
+        statement = (
+            select(CourseSubcategory.id, CourseSubcategory.name)
+            .join(Course, Course.subcategory_id == CourseSubcategory.id)
+            .where(CourseSubcategory.active == True)
+            .distinct()
+            .order_by(CourseSubcategory.name.asc())
+        )
+        rows = session.exec(statement).all()
+        return [{"id": r[0], "name": r[1]} for r in rows]
+
+    @staticmethod
+    def search_courses_by_title(session: Session, query: str, skip: int = 0, limit: int = 10) -> List[Course]:
+        """
+        Search courses by title (case-insensitive contains).
+        """
+        if not query:
+            return []
+        statement = (
+            select(Course)
+            .where(Course.title.ilike(f"%{query}%"))
+            .offset(skip)
+            .limit(limit)
+        )
+        return session.exec(statement).all()

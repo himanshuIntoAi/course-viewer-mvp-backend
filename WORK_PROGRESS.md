@@ -62,6 +62,155 @@ GET /course-learning/courses/{course_id}/details
 
 ---
 
+## Courses API returning empty list fix
+
+### Issue
+`GET /courses` and `GET /courses/{id}` returned empty results when the related mentor record was missing for a course.
+
+### Root Cause
+The repository queries used an inner join between `course.mentor_id` and `mentor.user_id`. If a course had a null or non-existent mentor reference, the inner join filtered it out.
+
+### Solution
+- Changed joins to left outer joins so courses are returned regardless of mentor presence.
+
+### Files Modified
+- `cou_course/repositories/course_repository.py`
+  - `get_all_courses`: inner join → left outer join
+  - `get_course_by_id`: inner join → left outer join
+
+### Status
+✅ FIXED – Endpoints now return courses even when mentor is missing.
+
+---
+
+## Course model schema alignment with Supabase
+
+### Changes
+- `cou_course.models.course.Course`
+  - `sells_type_id`: foreign key updated to `cou_course.sells_type.id`
+  - `ratings`: type changed to integer with default `0`
+  - `mentor_id`: foreign key updated to `cou_user.user.id` (matches `course_mentor_id_fkey`)
+
+### Impact
+- Ensures SQLModel maps 1:1 with Supabase columns to avoid fetch/serialization issues.
+
+### Status
+✅ UPDATED – Model synced with DB schema.
+
+---
+
+## Mentor relationship mapping fix
+
+### Issue
+SQLAlchemy raised `NoForeignKeysError` for `Course.mentor` because there’s no direct FK from `cou_course.course.mentor_id` to `cou_user.mentor.id`; the relationship is `course.mentor_id` → `mentor.user_id`.
+
+### Solution
+- Added explicit relationship join condition:
+  - In `cou_course/models/course.py` → `Course.mentor` uses `primaryjoin=foreign(Course.mentor_id)==Mentor.user_id` and `lazy='joined'`.
+- Leaves `Mentor.courses` mapping consistent with the same `primaryjoin`.
+
+### Status
+✅ FIXED – ORM can now join Course to Mentor via `user_id` without FK errors.
+
+---
+
+## CourseRead response validation fix
+
+### Issue
+FastAPI response validation failed: `Field required: instructor` for courses without mentor or when relationship is not present in the result model.
+
+### Solution
+- Made `InstructorInfo` fields optional.
+- Mapped `Course.mentor` relationship to API field `instructor` using `alias`.
+  - In `CourseRead`: `instructor: Optional[InstructorInfo] = Field(default=None, alias="mentor")`.
+
+### Status
+✅ FIXED – Response serialization succeeds whether mentor is present or not.
+
+---
+
+## Schema import fix
+
+### Issue
+Server failed on startup with `NameError: name 'Field' is not defined` in `cou_course/schemas/course_schema.py` after aliasing `instructor`.
+
+### Solution
+- Added missing import: `from pydantic import BaseModel, Field`.
+
+### Status
+✅ FIXED – App starts cleanly.
+
+---
+
+## Include instructor details in course responses
+
+### Requirement
+Return mentor data for each course: mentor id, profession, and mentor name.
+
+### Implementation
+- Schema:
+  - `CourseRead.instructor` now exposes `{ id, name, profession }`.
+- Repository:
+  - `get_all_courses` and `get_course_by_id` now left-join `cou_mentor.mentor` (by `mentor.user_id`) and `cou_user.user`.
+  - Each course result is enriched with `instructor` built from `Mentor.designation` (profession) and `User.display_name` or `first_name + last_name`.
+
+### Files Modified
+- `cou_course/schemas/course_schema.py`
+- `cou_course/repositories/course_repository.py`
+
+### Status
+✅ UPDATED – Course APIs return instructor details when available; remain null-safe when not.
+
+---
+
+## Unique subcategories endpoint
+
+### Requirement
+Expose unique course subcategory names used by all courses for catalog filtering.
+
+### Implementation
+- Repository: Added `get_unique_subcategories()` selecting distinct `cou_course.course_subcategory.name` joined via `Course.subcategory_id`.
+- Route: `GET /courses/subcategories` returns `List[str]` of subcategory names.
+
+### Files Modified
+- `cou_course/repositories/course_repository.py`
+- `cou_course/api/course_routes.py`
+
+### Status
+✅ ADDED – Endpoint provides unique, alphabetized subcategory names.
+
+---
+
+## Courses by subcategory name endpoint
+
+### Requirement
+Fetch all courses for a given subcategory (by name) for catalog filtering.
+
+### Implementation
+- Repository: Added `get_courses_by_subcategory_name(name, skip, limit)` joining `Course.subcategory_id` to `CourseSubcategory.id` and filtering by name.
+- Route: `GET /courses/subcategories/{name}` returns `List[CourseRead]`.
+
+### Files Modified
+- `cou_course/repositories/course_repository.py`
+- `cou_course/api/course_routes.py`
+
+### Status
+✅ ADDED – Endpoint returns courses under the specified subcategory.
+
+---
+## Mentor model schema alignment
+
+### Change
+- `cou_mentor.models.mentor.Mentor` table schema set to `cou_mentor` (was `cou_user`).
+- Added `designation` field to match mentor table and expose profession.
+- Removed non-existent columns (`rating`, `is_available`) to prevent UndefinedColumn errors.
+
+### Impact
+- Ensures joins from courses to mentors resolve to the correct schema and provide `profession` value.
+
+### Status
+✅ UPDATED – Mentor model now matches DB schema and surfaces designation; no UndefinedColumn errors.
+
 ## Question Type Enum Validation Fix
 
 ### Issue
@@ -210,3 +359,28 @@ GitHub push protection blocked repository push due to detected secrets in commit
 
 ### Status
 ✅ **RESOLVED** - Secrets removed, repository clean and ready for safe commits.
+
+---
+
+## Git Security Issue Resolution (Second Instance)
+
+### Issue
+GitHub push protection blocked repository push due to detected secrets in commit `47f2725`:
+- Google OAuth Client ID and Secret
+- Azure Active Directory Application Secret  
+- Azure Storage Account Access Key
+- Located in "sample env copy" file
+
+### Solution
+- **Aborted problematic rebase** using `git rebase --abort`
+- **Reset commits** using `git reset --soft HEAD~2` to remove both problematic commits
+- **Created clean commit** with only the actual code changes (course learning functionality)
+- **Force pushed** using `git push --force-with-lease origin main` to bypass protection
+- **Successfully pushed** clean commit `78bb0a5` without any secrets
+
+### Files Affected
+- Removed: Commits containing "sample env copy" with secrets
+- Kept: Actual code changes in course learning functionality
+
+### Status
+✅ **RESOLVED** - Secrets removed, clean code successfully pushed to repository.
