@@ -384,3 +384,179 @@ GitHub push protection blocked repository push due to detected secrets in commit
 
 ### Status
 ✅ **RESOLVED** - Secrets removed, clean code successfully pushed to repository.
+
+---
+
+## Project Dependencies Installation
+
+### Summary
+Successfully installed all project dependencies for both Python and Node.js components.
+
+### Changes Made
+- **Python Dependencies**: Installed all packages from `requirements.txt` using `pip3`
+  - FastAPI web framework and related packages
+  - Database drivers (psycopg2-binary for PostgreSQL)
+  - Authentication libraries (python-jose, bcrypt)
+  - Testing frameworks (pytest, pytest-asyncio, pytest-cov)
+  - Azure storage and email validation libraries
+  - All 40+ dependencies installed successfully
+
+- **Node.js Dependencies**: Installed packages from `package.json` using `npm install`
+  - @react-oauth/google package for OAuth integration
+  - No vulnerabilities found in dependency audit
+
+### Files Processed
+- `requirements.txt` - Python dependencies (40+ packages)
+- `package.json` - Node.js dependencies (1 package)
+
+### Status
+✅ **COMPLETED** - All dependencies installed successfully with no errors or vulnerabilities.
+
+---
+
+## Course Category Filtering Endpoint
+
+### Summary
+Added endpoint to fetch courses by category ID for better course filtering and organization.
+
+### Changes Made
+
+#### 1. Repository Method (`cou_course/repositories/course_repository.py`)
+- **Added**: `get_courses_by_category_id()` method
+- **Features**:
+  - Fetches courses filtered by category ID
+  - Supports pagination with skip and limit parameters
+  - Returns list of Course objects matching the category
+
+#### 2. API Endpoint (`cou_course/api/course_routes.py`)
+- **Added**: `GET /courses/categories/{category_id}`
+- **Response Model**: `List[CourseRead]`
+- **Features**:
+  - Fetches all courses in the specified category
+  - Supports pagination (skip, limit parameters)
+  - Comprehensive documentation with parameter descriptions
+  - Consistent with existing subcategory endpoint pattern
+
+### API Usage
+```
+GET /courses/categories/{category_id}?skip=0&limit=10
+```
+
+**Parameters**:
+- `category_id`: The ID of the category to filter by
+- `skip`: Number of records to skip for pagination (optional, default: 0)
+- `limit`: Maximum number of records to return (optional, default: 10)
+
+**Response**: List of courses that belong to the specified category.
+
+### Technical Notes
+- Follows the same pattern as the existing subcategory endpoint
+- Maintains consistency with existing API design
+- Includes proper pagination support
+- Repository method is efficient with direct SQL filtering
+
+### Files Modified
+1. `cou_course/repositories/course_repository.py` - Added repository method
+2. `cou_course/api/course_routes.py` - Added API endpoint
+
+### Status
+✅ **COMPLETED** - Course category filtering endpoint successfully implemented.
+
+---
+
+## Course Limit Issue Fix
+
+### Issue
+API was only returning 60 courses out of 1500 available in the database, regardless of limit/skip parameters passed by the frontend.
+
+### Root Cause Analysis
+**Primary Issue**: INNER JOIN with Mentor table was filtering out courses without valid mentor records.
+- `get_all_courses()` method used `join(Mentor, Course.mentor_id == Mentor.user_id)`
+- This INNER JOIN excluded courses with NULL mentor_id or invalid mentor references
+- Only courses with valid mentor records were being returned
+
+### Solution Implemented
+
+#### 1. Fixed Repository Methods (`cou_course/repositories/course_repository.py`)
+- **Changed INNER JOIN to LEFT OUTER JOIN** in `get_all_courses()`:
+  ```python
+  # Before: .join(Mentor, Course.mentor_id == Mentor.user_id)
+  # After:  .outerjoin(Mentor, Course.mentor_id == Mentor.user_id)
+  ```
+- **Fixed `get_courses_by_mentor()`** method with same change
+- **Added `get_course_count()`** method for debugging course counts
+
+#### 2. Added Debug Endpoint (`cou_course/api/course_routes.py`)
+- **Added**: `GET /courses/count` endpoint
+- **Features**:
+  - Returns total course count
+  - Shows courses with/without mentors
+  - Helps identify data distribution issues
+  - Provides debugging information for pagination
+
+### Technical Details
+- **LEFT OUTER JOIN**: Now returns all courses regardless of mentor status
+- **Backward Compatibility**: Courses with mentors still work as before
+- **Performance**: No significant impact on query performance
+- **Data Integrity**: Maintains existing relationships while including orphaned courses
+
+### Files Modified
+1. `cou_course/repositories/course_repository.py` - Fixed JOIN operations and added count method
+2. `cou_course/api/course_routes.py` - Added debug endpoint
+
+### Testing
+- Use `GET /api/v1/courses/count` to verify total course count
+- Test `GET /api/v1/courses/?limit=100` to confirm all courses are now accessible
+- Verify pagination works with higher limits (e.g., limit=200, limit=500)
+
+### Status
+✅ **FIXED** - Course limit issue resolved. All 1500 courses should now be accessible via pagination.
+
+---
+
+## Enhanced Search API with ID Support
+
+### Summary
+Enhanced the search API to intelligently handle both text-based searches and ID-based course fetching in a single endpoint.
+
+### Changes Made
+
+#### 1. Enhanced Search Endpoint (`cou_course/api/course_routes.py`)
+- **Smart Query Detection**: Automatically detects if input is numeric (course ID) or text
+- **Dual Functionality**:
+  - **Numeric Input**: Returns specific course by ID
+  - **Text Input**: Performs title-based search with pagination
+- **Comprehensive Documentation**: Added detailed parameter descriptions
+
+#### 2. Improved Repository Methods (`cou_course/repositories/course_repository.py`)
+- **Enhanced `get_course_by_id()`**: Added mentor information with LEFT OUTER JOIN
+- **Enhanced `search_courses_by_title()`**: Added mentor information for consistency
+- **Consistent Data**: All methods now return courses with mentor details
+
+### API Usage Examples
+
+#### Text Search (Original Functionality)
+```
+GET /api/v1/courses/search?q=python&skip=0&limit=10
+```
+Returns: List of courses with "python" in the title
+
+#### ID-Based Search (New Functionality)
+```
+GET /api/v1/courses/search?q=123
+```
+Returns: Single course with ID 123 (or empty array if not found)
+
+### Technical Details
+- **Input Validation**: Uses `q.strip().isdigit()` to detect numeric input
+- **Error Handling**: Returns empty array for non-existent course IDs
+- **Backward Compatibility**: All existing text search functionality preserved
+- **Consistent Response**: Both search types return same `CourseRead` schema
+- **Performance**: Direct ID lookup is faster than text search for known IDs
+
+### Files Modified
+1. `cou_course/api/course_routes.py` - Enhanced search endpoint logic
+2. `cou_course/repositories/course_repository.py` - Improved repository methods
+
+### Status
+✅ **COMPLETED** - Search API now supports both text search and ID-based course fetching.

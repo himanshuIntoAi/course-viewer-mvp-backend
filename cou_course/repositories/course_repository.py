@@ -21,6 +21,7 @@ class CourseRepository:
     def get_course_by_id(session: Session, course_id: int) -> Optional[Course]:
         statement = (
             select(Course)
+            .outerjoin(Mentor, Course.mentor_id == Mentor.user_id)
             .where(Course.id == course_id)
         )
         return session.exec(statement).first()
@@ -29,7 +30,7 @@ class CourseRepository:
     def get_all_courses(session: Session , skip: int , limit: int) -> List[Course]:
         statement = (
             select(Course)
-            .join(Mentor, Course.mentor_id == Mentor.user_id)
+            .outerjoin(Mentor, Course.mentor_id == Mentor.user_id)
             .offset(skip)
             .limit(limit)
         )
@@ -58,7 +59,7 @@ class CourseRepository:
     def get_courses_by_mentor(session: Session, mentor_id: int):
         statement = (
             select(Course)
-            .join(Mentor, Course.mentor_id == Mentor.user_id)
+            .outerjoin(Mentor, Course.mentor_id == Mentor.user_id)
             .where(Course.mentor_id == mentor_id)
         )
         return session.exec(statement).all()
@@ -254,6 +255,46 @@ class CourseRepository:
         return session.exec(statement).all()
 
     @staticmethod
+    def get_courses_by_category_id(session: Session, category_id: int, skip: int = 0, limit: int = 10) -> List[Course]:
+        """
+        Fetch courses that belong to the given category id.
+        """
+        statement = (
+            select(Course)
+            .where(Course.category_id == category_id)
+            .offset(skip)
+            .limit(limit)
+        )
+        return session.exec(statement).all()
+
+    @staticmethod
+    def get_course_count(session: Session) -> dict:
+        """
+        Get total count of courses and breakdown by mentor status.
+        """
+        from sqlalchemy import func
+        
+        # Count total courses
+        total_count_statement = select(func.count(Course.id))
+        total_count = session.exec(total_count_statement).first()
+        
+        # Count courses with mentors
+        courses_with_mentors_statement = (
+            select(func.count(Course.id))
+            .join(Mentor, Course.mentor_id == Mentor.user_id)
+        )
+        courses_with_mentors_count = session.exec(courses_with_mentors_statement).first()
+        
+        # Count courses without mentors
+        courses_without_mentors = total_count - courses_with_mentors_count if total_count and courses_with_mentors_count else 0
+        
+        return {
+            "total_courses": total_count,
+            "courses_with_mentors": courses_with_mentors_count,
+            "courses_without_mentors": courses_without_mentors
+        }
+
+    @staticmethod
     def get_unique_subcategories(session: Session) -> List[dict]:
         """
         Return unique course subcategories (id + name) used by courses.
@@ -272,12 +313,13 @@ class CourseRepository:
     @staticmethod
     def search_courses_by_title(session: Session, query: str, skip: int = 0, limit: int = 10) -> List[Course]:
         """
-        Search courses by title (case-insensitive contains).
+        Search courses by title (case-insensitive contains) with mentor information.
         """
         if not query:
             return []
         statement = (
             select(Course)
+            .outerjoin(Mentor, Course.mentor_id == Mentor.user_id)
             .where(Course.title.ilike(f"%{query}%"))
             .offset(skip)
             .limit(limit)
