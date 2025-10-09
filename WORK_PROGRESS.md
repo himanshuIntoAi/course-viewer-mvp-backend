@@ -62,6 +62,41 @@ GET /course-learning/courses/{course_id}/details
 
 ---
 
+## Quiz fetch error: database connection resiliency
+
+### Issue
+Intermittent 500s when calling quiz endpoints with `(psycopg2.DatabaseError) server closed the connection unexpectedly`.
+
+### Fix
+- Enabled connection pool health checks and recycling in `common/database.py`:
+  - `pool_pre_ping=True`, `pool_recycle=1800`, `pool_timeout=30`.
+
+### Status
+✅ UPDATED – Connection pool hardened; no linter errors.
+
+---
+
+## Mindmap fetch error: additional DB connection hardening
+
+### Issue
+Mindmap endpoint failed intermittently with the same server-closed error.
+
+### Fix
+- Added driver-level TCP keepalives via `connect_args`:
+  - `keepalives=1`, `keepalives_idle=30`, `keepalives_interval=10`, `keepalives_count=3`.
+- Retained `pool_pre_ping`, `pool_recycle`, `pool_timeout`.
+
+### Files Modified
+- `common/database.py`
+
+### Impact
+- Reduces broken pooled connections after idle periods; improves reliability across quizzes, mindmaps, and others.
+
+### Status
+✅ UPDATED – Additional DB resilience applied; no linter errors.
+
+---
+
 ## Courses API returning empty list fix
 
 ### Issue

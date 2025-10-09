@@ -10,7 +10,16 @@ from cou_user.models.logintype import LoginType
 engine = create_engine(
     settings.DATABASE_URL,
     pool_size=20,
-    max_overflow=15
+    max_overflow=15,
+    pool_pre_ping=True,   # validate connections before use
+    pool_recycle=1800,    # recycle after 30 minutes to avoid stale connections
+    pool_timeout=30,      # wait up to 30s for a pooled connection
+    connect_args={        # enable TCP keepalives at driver level (psycopg2)
+        "keepalives": 1,
+        "keepalives_idle": 30,      # seconds of inactivity before keepalive probes
+        "keepalives_interval": 10,  # seconds between keepalive probes
+        "keepalives_count": 3       # number of failed probes before dropping
+    }
 )
 
 # Create all tables
